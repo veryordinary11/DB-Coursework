@@ -153,7 +153,9 @@ DECLARE
     v_availability NUMBER;
     v_borrowRule VARCHAR2(10);
 BEGIN
-    -- First check availability of resource
+    -- First check eligibility of the member
+
+    -- Second check availability of resource
     SELECT availability INTO v_availability FROM Resources WHERE resourceId = :NEW.resourceId;
     IF v_availability = 0 THEN
         RAISE_APPLICATION_ERROR(-20008, 'Resource is not available for short loan.');
