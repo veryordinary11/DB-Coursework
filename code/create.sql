@@ -135,43 +135,113 @@ CREATE TABLE Loan (
 );
 
 
-/* Constrain for dueDate and returnDate */
-CREATE OR REPLACE TRIGGER trg_check_loan_dates
-BEFORE UPDATE ON Loan
-FOR EACH ROW
-BEGIN
-    IF :NEW.returnDate <= :NEW.loanDate THEN
-        RAISE_APPLICATION_ERROR(-20009, 'Return Date must be after Loan Date.');
-    END IF;
-END;
-
--- Trigger when a loan is created, check "borrowRule" and "availability"
-CREATE OR REPLACE TRIGGER trg_check_borrowRule_availability
+/* Trigger to handle loan creation logic(borrow resource) */
+CREATE OR REPLACE TRIGGER trg_loan_insert
 BEFORE INSERT ON Loan
 FOR EACH ROW
 DECLARE
-    v_availability NUMBER;
-    v_borrowRule VARCHAR2(10);
+    member_eligibility NUMBER;
+    resource_availability NUMBER;
+    borrow_rule VARCHAR2(20);
 BEGIN
-    -- First check eligibility of the member
+    -- Step 1: Check member eligibility
+    SELECT 
+        CASE 
+            WHEN m.totalFine <= 10 AND m.totalLoan <= rl.resourceLimit THEN 1
+            ELSE 0
+        END
+    INTO member_eligibility
+    FROM 
+        Member m
+    JOIN 
+        ResourceLimit rl ON m.memberType = rl.memberType
+    WHERE 
+        m.memberId = :NEW.memberId;
 
-    -- Second check availability of resource
-    SELECT availability INTO v_availability FROM Resources WHERE resourceId = :NEW.resourceId;
-    IF v_availability = 0 THEN
-        RAISE_APPLICATION_ERROR(-20008, 'Resource is not available for short loan.');
+    IF member_eligibility = 0 THEN
+        RAISE_APPLICATION_ERROR(-20010, 'Member is not eligible to borrow this resource.');
     END IF;
 
-    -- Then check borrowRule and set dueDate accordingly
-    SELECT borrowRule INTO v_borrowRule FROM Resources WHERE resourceId = :NEW.resourceId;
-    IF v_borrowRule = 'short' THEN
-        :NEW.dueDate := :NEW.loanDate + 3;
-    ELSIF v_borrowRule = 'onSite' THEN
-        :NEW.dueDate := :NEW.loanDate;
+    -- Step 2: Check resource availability and borrow rule
+    SELECT 
+        r.availability, 
+        r.borrowRule
+    INTO 
+        resource_availability, 
+        borrow_rule
+    FROM 
+        Resources r
+    WHERE 
+        r.resourceId = :NEW.resourceId;
+
+    IF resource_availability = 0 THEN
+        RAISE_APPLICATION_ERROR(-20011, 'Resource is not available for borrowing.');
+    END IF;
+
+    -- Step 3: Determine dueDate based on borrowRule
+    IF borrow_rule = 'normal' THEN
+        :NEW.dueDate := SYSDATE + 21;
+    ELSIF borrow_rule = 'short' THEN
+        :NEW.dueDate := SYSDATE + 3;
+    ELSIF borrow_rule = 'onSite' THEN
+        :NEW.dueDate := SYSDATE;
     ELSE
-        :NEW.dueDate := :NEW.loanDate + 21;
+        :NEW.dueDate := SYSDATE; -- Default case
     END IF;
+
+    -- Set loanDate to the current date
+    :NEW.loanDate := SYSDATE;
+
+    -- Step 4: Update resource availability and member's totalLoan
+    UPDATE Resources
+    SET availability = 0
+    WHERE resourceId = :NEW.resourceId;
+
+    UPDATE Member
+    SET totalLoan = totalLoan + 1
+    WHERE memberId = :NEW.memberId;
 END;
 /
+
+
+/* Trigger to handle loan update logic (return resource) */
+CREATE OR REPLACE TRIGGER trg_loan_update
+BEFORE UPDATE OF returnDate ON Loan
+FOR EACH ROW
+DECLARE
+    v_dueDate DATE;
+    v_returnDate DATE;
+    v_fine NUMBER;
+BEGIN
+    -- Step 1: Fetch the dueDate and returnDate for the loan
+    v_dueDate := :OLD.dueDate;
+    v_returnDate := :NEW.returnDate;
+
+    -- Step 2: Calculate the fine (if the returnDate is after the dueDate)
+    IF v_returnDate > v_dueDate THEN
+        v_fine := v_returnDate - v_dueDate;
+    ELSE
+        v_fine := 0; -- No fine if returned on or before dueDate
+    END IF;
+
+    -- Step 3: Update the Member's totalFine and totalLoan
+    UPDATE Member
+    SET 
+        totalFine = totalFine + v_fine, -- Add calculated fine to the totalFine
+        totalLoan = totalLoan - 1       -- Decrement the totalLoan
+    WHERE 
+        memberId = :OLD.memberId;
+
+    -- Step 4: Update the Resource's availability
+    UPDATE Resources
+    SET 
+        availability = 1 -- Set the resource as available
+    WHERE 
+        resourceId = :OLD.resourceId;
+END;
+/
+
+
 
 
 
@@ -187,15 +257,26 @@ CREATE TABLE Reservation (
     FOREIGN KEY (resourceId) REFERENCES Resources(resourceId) ON DELETE CASCADE
 );
 
-
-/* Constrain for expirationDate */
-CREATE OR REPLACE TRIGGER trg_check_reservation_dates
-BEFORE INSERT OR UPDATE ON Reservation
+/* insert into reservation simulate a member reserve a resource */
+CREATE OR REPLACE TRIGGER trg_reservation_insert
+BEFORE INSERT ON Reservation
 FOR EACH ROW
+DECLARE
+    v_memberFine NUMBER;
+    v_memberFails NUMBER;
 BEGIN
-    IF :NEW.expirationDate <= :NEW.reservationDate THEN
-        RAISE_APPLICATION_ERROR(-20010, 'Expiration Date must be after Reservation Date.');
+    -- Step 1: Check member's totalFine and reservationFailed
+    SELECT totalFine, reservationFailed
+    INTO v_memberFine, v_memberFails
+    FROM Member
+    WHERE memberId = :NEW.memberId;
+
+    -- Step 2: Raise an error if member eligibility conditions are not met
+    IF v_memberFine > 10 THEN
+        RAISE_APPLICATION_ERROR(-20012, 'Member has too much fine to make a reservation.');
+    ELSIF v_memberFails >= 3 THEN
+        RAISE_APPLICATION_ERROR(-20013, 'Member has exceeded the allowed number of failed reservations.');
     END IF;
 END;
-
+/
 

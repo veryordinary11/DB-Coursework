@@ -96,75 +96,22 @@ VALUES ('cf3fd2b0-4c71-4f95-9253-f325fb15b7ac', 'device', NULL, 'onSite', NULL, 
 
 /* 5. Inserting some rows into the Loan table to simulate some user borrow a resource */
 
--- Alan Li borrow Advanced Mathematics
-
--- Step 1  check the eligibility of that member from the View table(toalFine <= 10 totalLoan <= limit)
-
--- create a view named MemberEligibility to help us determine the member's eligibility
-CREATE OR REPLACE VIEW MemberEligibility AS
-SELECT 
-    m.memberId,
-    m.memberName,
-    CASE 
-        WHEN m.totalFine <= 10 AND m.totalLoan <= rl.resourceLimit THEN 1
-        ELSE 0
-    END AS eligibility
-FROM 
-    Member m
-JOIN 
-    ResourceLimit rl ON m.memberType = rl.memberType;
-
--- check the eligibility
-SELECT
-    me.eligibility
-FROM
-    MemberEligibility me
-WHERE
-    me.memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4';
+-- Alan Li borrowing Advanced Mathematics
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES (
+    SYS_GUID(), -- Automatically generates a unique loanId
+    '082413d4-7897-4ef9-b69e-c7d65514d6c4', -- Alan Li's memberId
+    'a846cbd1-b13f-4d50-9283-ff8dfe5f39db'  -- ResourceId for Advanced Mathematics
+);
 
 
--- Step 2: check the availability of the resource from the Resource table
-SELECT
-    r.availability
-FROM
-    Resources r
-WHERE
-    r.resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db';
+/* 6. Updating rows into the Loan table to simulate some user return a resource */
 
--- Step 3: create a record of Loan
--- Only if both eligibility and availability is equal to 1, create the record
-
--- Step 3: Insert a loan record
--- Step 3: Insert a loan record with dynamic dueDate based on borrowRule
-INSERT INTO Loan (loanId, memberId, resourceId, loanDate, dueDate)
-SELECT
-    SYS_GUID(),  -- Generates a unique loanId using UUID
-    '082413d4-7897-4ef9-b69e-c7d65514d6c4',  -- Member ID
-    'a846cbd1-b13f-4d50-9283-ff8dfe5f39db',  -- Resource ID
-    SYSDATE,  -- Current date for loan date
-    CASE 
-        WHEN r.borrowRule = 'normal' THEN SYSDATE + 21  -- 3 weeks for normal
-        WHEN r.borrowRule = 'short' THEN SYSDATE + 3   -- 3 days for short
-        WHEN r.borrowRule = 'onSite' THEN SYSDATE      -- same day for on-site
-        ELSE SYSDATE  -- default to current date if no rule matches
-    END AS dueDate
-FROM
-    Resources r
-WHERE
-    r.resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db'
-    AND (SELECT eligibility FROM MemberEligibility me WHERE me.memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4') = 1
-    AND r.availability = 1;
+-- Alan Li returns "Advanced Mathematics" 3 days after the due date
+UPDATE Loan
+SET returnDate = dueDate + 3
+WHERE memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4' 
+  AND resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db';
 
 
 
--- Step 4: update the resource availability to False and update the totalLoan of the member +1
-
--- Update the availability of the resource (set to 0 because it's borrowed)
-UPDATE Resources
-SET availability = 0
-WHERE resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db';
-
--- Update the totalLoan of the member (increment by 1)
-UPDATE Member
-SET totalLoan = totalLoan + 1
-WHERE memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4';
