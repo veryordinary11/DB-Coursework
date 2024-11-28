@@ -184,7 +184,7 @@ BEGIN
     ELSIF borrow_rule = 'short' THEN
         :NEW.dueDate := SYSDATE + 3;
     ELSIF borrow_rule = 'onSite' THEN
-        :NEW.dueDate := SYSDATE;
+        RAISE_APPLICATION_ERROR(-20012, 'Resource should only be used on site.');
     ELSE
         :NEW.dueDate := SYSDATE; -- Default case
     END IF;
@@ -213,6 +213,10 @@ DECLARE
     v_returnDate DATE;
     v_fine NUMBER;
 BEGIN
+    IF :OLD.returnDate IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20013, 'The resource is already returned.');
+    END IF;
+
     -- Step 1: Fetch the dueDate and returnDate for the loan
     v_dueDate := :OLD.dueDate;
     v_returnDate := :NEW.returnDate;
@@ -273,9 +277,9 @@ BEGIN
 
     -- Step 2: Raise an error if member eligibility conditions are not met
     IF v_memberFine > 10 THEN
-        RAISE_APPLICATION_ERROR(-20012, 'Member has too much fine to make a reservation.');
+        RAISE_APPLICATION_ERROR(-20014, 'Member has too much fine to make a reservation.');
     ELSIF v_memberFails >= 3 THEN
-        RAISE_APPLICATION_ERROR(-20013, 'Member has exceeded the allowed number of failed reservations.');
+        RAISE_APPLICATION_ERROR(-20015, 'Member has exceeded the allowed number of failed reservations.');
     END IF;
 END;
 /
