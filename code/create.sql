@@ -204,6 +204,78 @@ END;
 /
 
 
+
+------------------- Reservation table -------------------
+CREATE TABLE Reservation (
+    reservationId VARCHAR2(100) PRIMARY KEY,
+    memberId VARCHAR2(100) NOT NULL,
+    resourceId VARCHAR2(100) NOT NULL,
+    reservationDate DATE DEFAULT SYSDATE,
+    expirationDate DATE DEFAULT NULL,
+    responseDate DATE DEFAULT NULL,
+    FOREIGN KEY (memberId) REFERENCES Member(memberId) ON DELETE CASCADE,
+    FOREIGN KEY (resourceId) REFERENCES Resources(resourceId) ON DELETE CASCADE
+);
+
+/* insert into reservation simulate a member reserve a resource */
+CREATE OR REPLACE TRIGGER trg_reservation_insert
+BEFORE INSERT ON Reservation
+FOR EACH ROW
+DECLARE
+    v_memberFine NUMBER;
+    v_memberFails NUMBER;
+    v_resourceAvailability NUMBER;
+BEGIN
+    -- Step 1: Check member's totalFine and reservationFailed
+    SELECT totalFine, reservationFailed
+    INTO v_memberFine, v_memberFails
+    FROM Member
+    WHERE memberId = :NEW.memberId;
+
+    -- Step 2: Raise an error if member eligibility conditions are not met
+    IF v_memberFine > 10 THEN
+        RAISE_APPLICATION_ERROR(-20014, 'Member has too much fine to make a reservation.');
+    ELSIF v_memberFails >= 3 THEN
+        RAISE_APPLICATION_ERROR(-20015, 'Member has exceeded the allowed number of failed reservations.');
+    END IF;
+    -- Step 3: Raise an error if the resource is available
+    SELECT availability
+    INTO v_resourceAvailability
+    FROM Resources
+    WHERE resourceId = :NEW.resourceId;
+
+    IF v_resourceAvailability = 1 THEN
+        RAISE_APPLICATION_ERROR(-20016, 'Resource is currently available and cannot be reserved.');
+    END IF;
+END;
+/
+
+/* update the reservation simulate a member response to a reservation */
+
+CREATE OR REPLACE TRIGGER trg_reservation_response
+BEFORE UPDATE OF responseDate ON Reservation
+FOR EACH ROW
+DECLARE
+    v_expirationDate DATE;
+    v_responseDate DATE;
+    v_memberId VARCHAR2(100);
+BEGIN
+    -- Check if the reservation is expired (responseDate > expirationDate)
+    v_expirationDate := :OLD.expirationDate;
+    v_responseDate := :NEW.responseDate;
+    v_memberId := :OLD.memberId;
+
+    -- Check if the reservation has expired
+    IF v_responseDate > v_expirationDate THEN
+        -- If expired, increment the member's reservationFailed count
+        UPDATE Member
+        SET reservationFailed = reservationFailed + 1
+        WHERE memberId = v_memberId;
+    END IF;
+END;
+/
+
+
 /* Trigger to handle loan update logic (return resource) */
 CREATE OR REPLACE TRIGGER trg_loan_update
 BEFORE UPDATE OF returnDate ON Loan
@@ -212,7 +284,11 @@ DECLARE
     v_dueDate DATE;
     v_returnDate DATE;
     v_fine NUMBER;
+    v_reservationId VARCHAR2(100);
+    v_reserverId VARCHAR2(100);
+    v_reserverFound NUMBER := 0;
 BEGIN
+    -- Prevent updating an already returned loan
     IF :OLD.returnDate IS NOT NULL THEN
         RAISE_APPLICATION_ERROR(-20013, 'The resource is already returned.');
     END IF;
@@ -236,51 +312,39 @@ BEGIN
     WHERE 
         memberId = :OLD.memberId;
 
-    -- Step 4: Update the Resource's availability
-    UPDATE Resources
-    SET 
-        availability = 1 -- Set the resource as available
-    WHERE 
-        resourceId = :OLD.resourceId;
-END;
-/
+     -- Step 4: If the resource is reserved, notify the first reserver
+    -- Fetch the first reservation for the resource
+    BEGIN
+        SELECT reservationId, memberId
+        INTO v_reservationId, v_reserverId
+        FROM Reservation
+        WHERE resourceId = :OLD.resourceId
+        ORDER BY reservationDate ASC -- Fetch the earliest reservation
+        FETCH FIRST 1 ROWS ONLY;
 
+        -- Notification logic here (not implemented)
 
+        -- Update the reservation table to give the reserver 3 days to respond
+        UPDATE Reservation
+        SET expirationDate = SYSDATE + 3
+        WHERE reservationId = v_reservationId;
 
+        -- If a reserver exists, do not update resource availability
+        v_reserverFound := 1;
 
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            -- No reservations exist for this resource; no action required
+            DBMS_OUTPUT.PUT_LINE('No reservations exist for this resource.');
+    END;
 
-
-------------------- Reservation table -------------------
-CREATE TABLE Reservation (
-    reservationId VARCHAR2(100) PRIMARY KEY,
-    memberId VARCHAR2(100) NOT NULL,
-    resourceId VARCHAR2(100) NOT NULL,
-    reservationDate DATE DEFAULT SYSDATE,
-    expirationDate DATE,
-    FOREIGN KEY (memberId) REFERENCES Member(memberId) ON DELETE CASCADE,
-    FOREIGN KEY (resourceId) REFERENCES Resources(resourceId) ON DELETE CASCADE
-);
-
-/* insert into reservation simulate a member reserve a resource */
-CREATE OR REPLACE TRIGGER trg_reservation_insert
-BEFORE INSERT ON Reservation
-FOR EACH ROW
-DECLARE
-    v_memberFine NUMBER;
-    v_memberFails NUMBER;
-BEGIN
-    -- Step 1: Check member's totalFine and reservationFailed
-    SELECT totalFine, reservationFailed
-    INTO v_memberFine, v_memberFails
-    FROM Member
-    WHERE memberId = :NEW.memberId;
-
-    -- Step 2: Raise an error if member eligibility conditions are not met
-    IF v_memberFine > 10 THEN
-        RAISE_APPLICATION_ERROR(-20014, 'Member has too much fine to make a reservation.');
-    ELSIF v_memberFails >= 3 THEN
-        RAISE_APPLICATION_ERROR(-20015, 'Member has exceeded the allowed number of failed reservations.');
+    -- Step 5: Update the Resource's availability if no reserver
+    IF v_reserverFound = 0 THEN
+        UPDATE Resources
+        SET 
+            availability = 1 -- Set the resource as available
+        WHERE 
+            resourceId = :OLD.resourceId;
     END IF;
 END;
 /
-

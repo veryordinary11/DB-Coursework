@@ -212,3 +212,55 @@ WHERE memberId = '082413d4-7897-4ef9-b69e-c7d65514d6c4'
   AND resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db'
   AND returnDate IS NULL;
 
+
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES (
+    'd873a2b9-6c71-4f68-9f8b-7d0a3c4e1278',
+    '9a703c27-bb79-4b4f-b9c2-2b5044f0b40b', -- Maria Zhang's memberId
+    '679b9a02-d568-4c0f-9c57-75c3f21e9c64' -- Machine Learning Basics
+);
+
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES (
+    'a34d89c7-2b45-4a8d-cf87-9b3e7d5f0981',
+    'b1c3fc3a-1f13-4db5-9b6e-531458773c96', -- John Doe's memberId
+    'b213c1e5-d899-41c0-b0c6-bb7b3a3347b4' -- Data Structures and Algorithms
+);
+
+UPDATE Loan
+SET returnDate = dueDate + 1
+WHERE memberId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96'
+  AND resourceId = 'b213c1e5-d899-41c0-b0c6-bb7b3a3347b4' 
+  AND returnDate IS NULL;
+
+INSERT INTO Loan (loanId, memberId, resourceId)
+VALUES (
+    '8deb49e3-5de0-4092-ab75-b0dc7117688f',
+    'b1c3fc3a-1f13-4db5-9b6e-531458773c96', -- John Doe's memberId
+    'a846cbd1-b13f-4d50-9283-ff8dfe5f39db' -- Advanced Mathematics
+);
+
+
+/* 8. Members make reservations */
+
+-- Maria Zhang reserve Advanced Mathematics
+INSERT INTO Reservation (reservationId, memberId, resourceId)
+VALUES (
+    '2fbc8d64-e932-4aef-8b2c-d90f5e19c51a',
+    '9a703c27-bb79-4b4f-b9c2-2b5044f0b40b', -- Maria Zhang's memberId
+    'a846cbd1-b13f-4d50-9283-ff8dfe5f39db' -- ResourceId for Advanced Mathematics
+);
+
+-- John Doe return Advanced Mathematics and trigger reservation notification
+UPDATE Loan
+SET returnDate = dueDate + 6
+WHERE memberId = 'b1c3fc3a-1f13-4db5-9b6e-531458773c96'
+  AND resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db' 
+  AND returnDate IS NULL;
+
+-- Maria Zhang response to the reservation
+UPDATE Reservation
+SET responseDate = expirationDate - 1
+WHERE memberId = '9a703c27-bb79-4b4f-b9c2-2b5044f0b40b'  -- Maria Zhang's memberId
+  AND resourceId = 'a846cbd1-b13f-4d50-9283-ff8dfe5f39db'  -- ResourceId for Advanced Mathematics
+  AND responseDate IS NULL;
