@@ -37,18 +37,19 @@ JOIN Resources r ON l.resourceId = r.resourceId;
 
 
 -- 3. List members and the total number of resources they have borrowed.
-SELECT m.memberId, m.memberName, COUNT(l.loanId) AS totalLoans
+SELECT m.memberId, m.memberName, COUNT(l.loanId) AS historyLoans
 FROM Member m
 JOIN Loan l ON m.memberId = l.memberId
 GROUP BY m.memberId, m.memberName;
 
 
--- 4.Find all unavailable resources and their borrowers.
-SELECT r.resourceTitle, m.memberName, l.loanDate 
+-- 4.Find all unavailable resources and their borrowers currently.
+SELECT r.resourceTitle, m.memberName, l.loanDate, l.returnDate
 FROM Resources r
 JOIN Loan l ON r.resourceId = l.resourceId
 JOIN Member m ON l.memberId = m.memberId
-WHERE r.availability = 0;
+WHERE r.availability = 0
+AND l.returnDate is NULL;
 
 /* Advanced Queries */
 

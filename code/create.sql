@@ -271,6 +271,20 @@ BEGIN
         UPDATE Member
         SET reservationFailed = reservationFailed + 1
         WHERE memberId = v_memberId;
+
+    ELSE
+        -- If not expired, update the resource's availability
+        UPDATE Resources
+        SET availability = 1
+        WHERE resourceId = :OLD.resourceId;
+
+        -- Generate a new loan for the member
+        INSERT INTO Loan (loanId, memberId, resourceId)
+        VALUES (
+            SYS_GUID(),  -- actually should be a uuidv4(), but it's not supported in Oracle Live, so use this
+            v_memberId,  -- Member who responded
+            :OLD.resourceId  -- Resource being loaned
+        );
     END IF;
 END;
 /
@@ -290,7 +304,7 @@ DECLARE
 BEGIN
     -- Prevent updating an already returned loan
     IF :OLD.returnDate IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20013, 'The resource is already returned.');
+        RAISE_APPLICATION_ERROR(-20017, 'The resource is already returned.');
     END IF;
 
     -- Step 1: Fetch the dueDate and returnDate for the loan
